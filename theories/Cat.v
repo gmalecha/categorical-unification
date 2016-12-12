@@ -1,14 +1,94 @@
 Require Import Coq.Lists.List.
 Require Import ExtLib.Data.Member.
 
+(** This should really go elsewhere *)
+Arguments MZ {_ _ _}.
+Arguments MN [_ _ _ _] _.
+
+
+Section with_t.
+  Context {T : Type}.
+  Context {t : T}.
+  Fixpoint member_weaken ls' {ls}
+  : member t ls -> member t (ls' ++ ls) :=
+    match ls' as ls'
+          return member t ls -> member t (ls' ++ ls)
+    with
+    | nil => fun x => x
+    | l :: ls' => fun x => MN (member_weaken ls' x)
+    end.
+
+  Fixpoint member_lift ls ls' ls''
+  : member t (ls'' ++ ls) -> member t (ls'' ++ ls' ++ ls) :=
+    match ls'' as ls''
+          return member t (ls'' ++ ls) -> member t (ls'' ++ ls' ++ ls)
+    with
+    | nil => member_weaken ls'
+    | l :: ls'' => fun m =>
+                    match m in member _ (x :: xs)
+                          return forall xs', (member t xs -> member t xs') ->
+                                        member t (x :: xs')
+                    with
+                    | MZ => fun _ _ => MZ
+                    | MN m => fun _ rec => MN (rec m)
+                    end _ (member_lift  ls ls' ls'')
+    end.
+End with_t.
+
+Section del_member.
+  Context {T : Type}.
+  Context {t : T}.
+
+  Fixpoint del_member {ls} (m : member t ls) : list T :=
+    match m with
+    | @MZ _ _ ls => ls
+    | @MN _ _ l _ m' => l :: del_member m'
+    end.
+
+End del_member.
+
+Section member_heq.
+  Context {T : Type}.
+  Fixpoint member_heq {l r : T} {ls} (m : member l ls)
+    : member r ls -> member r (del_member m) + (l = r).
+    refine
+      match m as m in member _ ls
+            return member r ls -> member r (del_member m) + (l = r)
+      with
+      | @MZ _ _ ls => fun b : member r (l :: ls) =>
+                       match b in member _ (z :: ls)
+                             return l = z -> member r (del_member (@MZ _ _ ls)) + (l = r)
+                       with
+                       | MZ => @inr _ _
+                       | MN m' => fun pf => inl m'
+                       end eq_refl
+      | @MN _ _ l' ls' mx => fun b : member r (l' :: ls') =>
+                               match b in member _ (z :: ls)
+                                     return (member _ ls -> member _ (del_member mx) + (_ = r)) ->
+                                            member r (del_member (@MN _ _ _ _ mx)) + (_ = r)
+                               with
+                               | MZ => fun _ => inl MZ
+                               | MN m' => fun f => match f m' with
+                                               | inl m => inl (MN m)
+                                               | inr pf => inr pf
+                                               end
+                               end (fun x => @member_heq _ _ _ mx x)
+      end.
+  Defined.
+
+End member_heq.
+
+
 Section with_univ.
   Variable T' : Set.
+  (** A simple type language since type constructors are not injective *)
   Inductive T : Set :=
   | Arr : T -> T -> T
   | Prod : T -> T -> T
   | Inj : T' -> T
   | Unit.
 
+  (** Categorical morphisms (as syntax) *)
   Inductive CMor : T -> T -> Set :=
   | MId : forall {t}, CMor t t
   | MCompose : forall {a b c}, CMor b c -> CMor a b -> CMor a c
@@ -21,6 +101,7 @@ Section with_univ.
   | MUncurry : forall {a b c}, CMor a (Arr b c) -> CMor (Prod a b) c
   | MApply : forall {a b}, CMor (Prod (Arr a b) a) b.
 
+  (** Categorical laws (as syntax) *)
   Inductive CMor_eq : forall {d c}, CMor d c -> CMor d c -> Prop :=
   | LUnit : forall {a b} {c : CMor a b}, CMor_eq (MCompose MId c) c
   | RUnit : forall {a b} {c : CMor a b}, CMor_eq (MCompose c MId) c
@@ -38,6 +119,17 @@ Section with_univ.
   | Sym_CMor_eq : forall {a b} (x y : CMor a b), CMor_eq x y -> CMor_eq y x
   | Trans_CMor_eq : forall {a b} (x y z : CMor a b), CMor_eq x y -> CMor_eq y z -> CMor_eq x z.
 
+  Instance Reflexive_CMor_eq {a b} : Reflexive (@CMor_eq a b).
+  constructor.
+  Defined.
+
+  Instance Symmetric_CMor_eq {a b} : Symmetric (@CMor_eq a b).
+  constructor; auto.
+  Defined.
+
+  Instance Transtive_CMor_eq {a b} : Transitive (@CMor_eq a b).
+  red. intros; eapply Trans_CMor_eq; eauto.
+  Defined.
 
 (*
   Definition optCompose {a b c} (g : CMor b c) : CMor a b -> CMor a c.
@@ -62,25 +154,9 @@ Section with_univ.
     end.
 *)
 
-  Inductive Expr (g : list T) : T -> Set :=
-  | EApp : forall t t', Expr g (Arr t t') -> Expr g t -> Expr g t'
-  | EAbs : forall t t', Expr (t :: g) t' -> Expr g (Arr t t')
-  | EVar : forall t, member t g -> Expr g t
-    (* Cartesian *)
-  | EFst : forall a b, Expr g (Arr (Prod a b) a)
-  | ESnd : forall a b, Expr g (Arr (Prod a b) b)
-  | EPair : forall a b, Expr g (Arr a (Arr b (Prod a b))).
-
-  Arguments EVar {_ _} _.
-  Arguments EAbs {_ _ _} _.
-  Arguments EApp {_ _ _} _ _.
-  Arguments EFst {_ _ _}.
-  Arguments ESnd {_ _ _}.
-  Arguments EPair {_ _ _}.
-
-  Arguments MZ {_ _ _}.
-  Arguments MN {_ _ _ _} _.
-
+  (** A more categorical representation of terms
+   ** - Here, the context is represented by a `T`
+   **)
   Inductive Expr' : T -> T -> Set :=
   | EApp' : forall {g t t'}, Expr' g (Arr t t') -> Expr' g t -> Expr' g t'
   | EAbs' : forall {g t t'}, Expr' (Prod t g) t' -> Expr' g (Arr t t')
@@ -91,6 +167,7 @@ Section with_univ.
   | ESnd' : forall {g a b}, Expr' g (Arr (Prod a b) b)
   | EPair' : forall {g a b}, Expr' g (Arr a (Arr b (Prod a b))).
 
+  (** Compilation of Expressions to Categorical morphisms *)
   Fixpoint expr'2cat {a b} (e : Expr' a b) : CMor a b :=
     match e in (Expr' t t0) return (CMor t t0) with
     | EApp' e1 e2 => MCompose MApply (MFork (expr'2cat e1) (expr'2cat e2))
@@ -103,9 +180,13 @@ Section with_univ.
     | EPair' => MCurry (MCurry (MFork (MCompose MSnd MFst) MSnd))
     end.
 
+  (** Pairing operator *)
   Definition Epair' {g a b} (e1 : Expr' g a) (e2 : Expr' g b) : Expr' g (Prod a b) :=
     EApp' (EApp' EPair' e1) e2.
 
+  (** Simultaneous substitution
+   ** - Note, this actually implements Compose
+   **)
   Fixpoint expr'subst {a b c} (s : Expr' c a) (e : Expr' a b) {struct e} : Expr' c b :=
     match e in (Expr' t t0) return (Expr' c t -> Expr' c t0) with
    | @EApp' g t t' e1 e2 =>
@@ -125,6 +206,8 @@ Section with_univ.
    | @EPair' g a0 b0 => fun _ : Expr' c g => EPair'
    end s.
 
+  (** Compilation of Categorical morphisms to expressions.
+   **)
   Fixpoint cat2expr' {a b} (m : CMor a b) : Expr' a b :=
     match m in (CMor t t0) return (Expr' t t0) with
     | @MId t => EHere'
@@ -139,100 +222,41 @@ Section with_univ.
     | @MApply a0 b0 => EApp' (ELiftL' EHere') (ELiftR' EHere')
     end.
 
+  (** One direction of the isomorphism *)
   Theorem cat2expr'_expr'2cat : forall a b (e : Expr' a b),
       cat2expr' (expr'2cat e) = e.
   Proof.
     (** Only true in the equational theory of Expr'. **)
   Admitted.
 
-  Instance Reflexive_CMor_eq {a b} : Reflexive (@CMor_eq a b).
-  constructor.
-  Defined.
-
-  Instance Symmetric_CMor_eq {a b} : Symmetric (@CMor_eq a b).
-  constructor; auto.
-  Defined.
-
-  Instance Transtive_CMor_eq {a b} : Transitive (@CMor_eq a b).
-  red. intros; eapply Trans_CMor_eq; eauto.
-  Defined.
-
+  (** The other direction of the isomorphism *)
   Theorem expr'2cat_cat2expr' : forall a b (e : CMor a b),
       CMor_eq (expr'2cat (cat2expr' e)) e.
   Proof.
   Admitted.
 
-  Section with_t.
-    Context {t : T}.
-    Fixpoint member_weaken ls' {ls}
-    : member t ls -> member t (ls' ++ ls) :=
-      match ls' as ls'
-            return member t ls -> member t (ls' ++ ls)
-      with
-      | nil => fun x => x
-      | l :: ls' => fun x => MN (member_weaken ls' x)
-      end.
+  (****************************************************)
+  (** Standard term representation                   **)
+  (****************************************************)
 
-    Fixpoint member_lift ls ls' ls''
-      : member t (ls'' ++ ls) -> member t (ls'' ++ ls' ++ ls) :=
-      match ls'' as ls''
-            return member t (ls'' ++ ls) -> member t (ls'' ++ ls' ++ ls)
-      with
-      | nil => member_weaken ls'
-      | l :: ls'' => fun m =>
-                       match m in member _ (x :: xs)
-                             return forall xs', (member t xs -> member t xs') ->
-                                                member t (x :: xs')
-                       with
-                       | MZ => fun _ _ => MZ
-                       | MN m => fun _ rec => MN (rec m)
-                       end _ (member_lift  ls ls' ls'')
-      end.
-  End with_t.
+  (** Basic definition of expressions *)
+  Inductive Expr (g : list T) : T -> Set :=
+  | EApp : forall t t', Expr g (Arr t t') -> Expr g t -> Expr g t'
+  | EAbs : forall t t', Expr (t :: g) t' -> Expr g (Arr t t')
+  | EVar : forall t, member t g -> Expr g t
+    (* Cartesian *)
+  | EFst : forall a b, Expr g (Arr (Prod a b) a)
+  | ESnd : forall a b, Expr g (Arr (Prod a b) b)
+  | EPair : forall a b, Expr g (Arr a (Arr b (Prod a b))).
+
+  Arguments EVar {_ _} _.
+  Arguments EAbs {_ _ _} _.
+  Arguments EApp {_ _ _} _ _.
+  Arguments EFst {_ _ _}.
+  Arguments ESnd {_ _ _}.
+  Arguments EPair {_ _ _}.
 
 
-  Section del_member.
-    Context {T : Type}.
-    Context {t : T}.
-
-    Fixpoint del_member {ls} (m : member t ls) : list T :=
-      match m with
-      | @MZ _ _ ls => ls
-      | @MN _ _ l _ m' => l :: del_member m'
-      end.
-
-  End del_member.
-
-  Section member_heq.
-    Context {T : Type}.
-    Fixpoint member_heq {l r : T} {ls} (m : member l ls)
-    : member r ls -> member r (del_member m) + (l = r).
-    refine
-      match m as m in member _ ls
-            return member r ls -> member r (del_member m) + (l = r)
-      with
-      | @MZ _ _ ls => fun b : member r (l :: ls) =>
-                       match b in member _ (z :: ls)
-                             return l = z -> member r (del_member (@MZ _ _ ls)) + (l = r)
-                       with
-                       | MZ => @inr _ _
-                       | MN m' => fun pf => inl m'
-                       end eq_refl
-      | @MN _ _ l' ls' mx => fun b : member r (l' :: ls') =>
-        match b in member _ (z :: ls)
-              return (member _ ls -> member _ (del_member mx) + (_ = r)) ->
-                     member r (del_member (@MN _ _ _ _ mx)) + (_ = r)
-        with
-        | MZ => fun _ => inl MZ
-        | MN m' => fun f => match f m' with
-                            | inl m => inl (MN m)
-                            | inr pf => inr pf
-                            end
-        end (fun x => @member_heq _ _ _ mx x)
-      end.
-    Defined.
-
-  End member_heq.
 
   Fixpoint lift {g} g' g'' {t} (e : Expr (g'' ++ g) t)
   : Expr (g'' ++ g' ++ g) t :=
@@ -316,21 +340,21 @@ Section with_univ.
     | EPair => MCurry (MCurry (MFork (MCompose MSnd MFst) MSnd))
     end.
 
-  Fixpoint cat2expr' {t g} (m : CMor g t) : Expr (g :: nil) t.
+  Fixpoint cat2expr1 {t g} (m : CMor g t) : Expr (g :: nil) t.
     destruct m.
     { apply EVar. eapply MZ. }
     { eapply EApp.
-      eapply (lift (_::nil) nil (EAbs (cat2expr' _ _ m1))).
-      eapply cat2expr'. assumption. }
+      eapply (lift (_::nil) nil (EAbs (cat2expr1 _ _ m1))).
+      eapply cat2expr1. assumption. }
     { eapply EApp. eapply EFst. eapply (EVar MZ). }
     { eapply EApp. eapply ESnd. eapply (EVar MZ). }
     { eapply EApp. eapply EApp. eapply EPair.
-      eapply cat2expr'; assumption.
-      eapply cat2expr'; assumption. }
+      eapply cat2expr1; assumption.
+      eapply cat2expr1; assumption. }
     { eapply EAbs.
-      refine (EApp (lift (b::a::nil) nil (EAbs (cat2expr' _ _ m))) _); clear. simpl.
+      refine (EApp (lift (b::a::nil) nil (EAbs (cat2expr1 _ _ m))) _); clear. simpl.
       refine (EApp (EApp EPair (EVar (MN MZ))) (EVar MZ)). }
-    { refine (EApp (EApp (lift (_::nil) nil (EAbs (cat2expr' _ _ m))) (EApp EFst (EVar MZ))) (EApp ESnd (EVar MZ))). }
+    { refine (EApp (EApp (lift (_::nil) nil (EAbs (cat2expr1 _ _ m))) (EApp EFst (EVar MZ))) (EApp ESnd (EVar MZ))). }
     { eapply EApp.
       eapply (EApp EFst (EVar MZ)).
       eapply (EApp ESnd (EVar MZ)). }
@@ -343,6 +367,7 @@ Section with_univ.
   Defined.
 
   Theorem cat2expr_expr2cat : forall a b (m : Expr (a :: nil) b),
-      Expr_eq (cat2expr' (expr2cat m)) (fixup m).
+      Expr_eq (cat2expr1 (expr2cat m)) (fixup m).
   Proof.
-    induction m.
+  Abort.
+End with_univ.
