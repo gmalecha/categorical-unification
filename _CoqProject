@@ -1,0 +1,4 @@
+-Q ../coq-ext-lib/master/theories ExtLib
+-Q theories CatUnif
+
+./theories/Cat.v
