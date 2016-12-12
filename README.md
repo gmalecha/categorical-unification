@@ -28,3 +28,6 @@ Notes
   - This is likely closely related to higher-order unification which is undecidable
     in general.
   - How does this arise in the categorical understanding?
+- This might also be a good place to play around with rewriting (e.g.
+  Knuth-Bendix completion) because I will already have syntactic
+  languages that should be easy to work with.
