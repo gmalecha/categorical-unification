@@ -1,3 +1,4 @@
+Require Import Coq.Classes.Morphisms.
 Require Import Coq.Lists.List.
 Require Import ExtLib.Data.Member.
 
@@ -107,17 +108,30 @@ Section with_univ.
   | RUnit : forall {a b} {c : CMor a b}, CMor_eq (MCompose c MId) c
   | CAssoc : forall {a b c d} (f : CMor a b) (g : CMor b c) (h : CMor c d),
       CMor_eq (MCompose h (MCompose g f)) (MCompose (MCompose h g) f)
+  | Proper_MCompose : forall {a b c}, Proper (CMor_eq ==> CMor_eq ==> CMor_eq) (@MCompose a b c)
     (* Cartesian *)
   | Fst_Fork : forall a b c l r, CMor_eq (MCompose MFst (@MFork a b c l r)) l
   | Snd_Fork : forall a b c l r, CMor_eq (MCompose MSnd (@MFork a b c l r)) r
+  | Fork_Fst_Snd : forall a b, CMor_eq (@MFork (Prod a b) a b MFst MSnd) MId
+  | Proper_MFork : forall {a b c}, Proper (CMor_eq ==> CMor_eq ==> CMor_eq) (@MFork a b c)
     (* Closed *)
   | Curry_Uncurry : forall {a b c} (x : CMor a (Arr b c)), CMor_eq (MCurry (MUncurry x)) x
   | Uncurry_Curry : forall {a b c} (x : CMor (Prod a b) c), CMor_eq (MUncurry (MCurry x)) x
   | Curry_Apply   : forall {a b}, CMor_eq (MCurry (@MApply a b)) MId
+  | Proper_MCurry : forall {a b c}, Proper (CMor_eq ==> CMor_eq) (@MCurry a b c)
+  | Proper_MUncurry : forall {a b c}, Proper (CMor_eq ==> CMor_eq) (@MUncurry a b c)
   (* Refl and Trans *)
   | Refl_CMor_eq : forall {a b} (x : CMor a b), CMor_eq x x
   | Sym_CMor_eq : forall {a b} (x y : CMor a b), CMor_eq x y -> CMor_eq y x
   | Trans_CMor_eq : forall {a b} (x y z : CMor a b), CMor_eq x y -> CMor_eq y z -> CMor_eq x z.
+
+
+  Existing Instance Proper_MCompose.
+  Existing Instance Proper_MFork.
+  Existing Instance Proper_MCurry.
+  Existing Instance Proper_MUncurry.
+
+  Hint Rewrite @Fork_Fst_Snd @LUnit @RUnit @CAssoc @Fst_Fork @Snd_Fork @Curry_Uncurry @Uncurry_Curry : rw_cmor.
 
   Instance Reflexive_CMor_eq {a b} : Reflexive (@CMor_eq a b).
   constructor.
@@ -233,6 +247,14 @@ Section with_univ.
   Theorem expr'2cat_cat2expr' : forall a b (e : CMor a b),
       CMor_eq (expr'2cat (cat2expr' e)) e.
   Proof.
+    induction e; simpl.
+    { reflexivity. }
+    { admit. }
+    { eapply LUnit. }
+    { eapply LUnit. }
+    { rewrite IHe1. rewrite IHe2. clear.
+      admit. }
+    { admit. }
   Admitted.
 
   (****************************************************)
